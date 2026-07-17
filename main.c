@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sqlite3.h>
+#include <ctype.h>
 
 #define BUFFER_MAX_AMOUNT_OF_LINKS 50
 
@@ -55,7 +56,6 @@ void search_for_links(GumboNode* node, char** links, size_t *number_of_links) {
 void extract_text(GumboNode* node) {
 	if (node->type == GUMBO_NODE_TEXT) {
 		const char* text = node->v.text.text;
-		printf("%s\n", text);
 	}
 
 	if (node->type != GUMBO_NODE_ELEMENT || 
@@ -70,6 +70,17 @@ void extract_text(GumboNode* node) {
 	for (unsigned int i = 0; i < children->length; ++i) {
 		extract_text((GumboNode*)(children->data[i]));
 	}
+}
+
+void normalize_text(char* buffer) {
+	size_t buffer_length = strlen(buffer);
+
+	for (int i = 0; i < buffer_length; ++i) {
+		buffer[i] = tolower(buffer[i]);
+	}
+}
+
+void tokenize_text() {
 }
 
 void handle_query(sqlite3 *db_handle, int return_code, char* query, char* error_message) {
