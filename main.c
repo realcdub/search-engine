@@ -14,7 +14,9 @@ typedef struct {
 
 size_t write_data(char *buffer, size_t size, size_t nmemb, void *userdata) {
 	Chunk* chunk = (Chunk*)userdata;
-	char* response = realloc(chunk->response, chunk->size + nmemb + 1);
+	size_t real_size = size * nmemb;
+
+	char* response = realloc(chunk->response, chunk->size + real_size + 1);
 
 	if (response == nullptr) {
 		printf("Realloc Failed!");
@@ -22,11 +24,11 @@ size_t write_data(char *buffer, size_t size, size_t nmemb, void *userdata) {
 	}
 
 	chunk->response = response;
-	memcpy(chunk->response + chunk->size, buffer, nmemb);
-	chunk->size += nmemb;
+	memcpy(chunk->response + chunk->size, buffer, real_size);
+	chunk->size += real_size;
 	chunk->response[chunk->size] = '\0';
 
-	return nmemb;
+	return real_size;
 }
 
 void search_for_links(GumboNode* node, char** links, size_t *number_of_links) {
@@ -42,7 +44,6 @@ void search_for_links(GumboNode* node, char** links, size_t *number_of_links) {
 
 		links[*number_of_links] = strdup(href->value);
 		*number_of_links += 1;
-		//printf("%s\n", href->value);
 	}
 
 	GumboVector* children = &node->v.element.children;
@@ -54,7 +55,7 @@ void search_for_links(GumboNode* node, char** links, size_t *number_of_links) {
 void extract_text(GumboNode* node) {
 	if (node->type == GUMBO_NODE_TEXT) {
 		const char* text = node->v.text.text;
-		printf("%s", text);
+		printf("%s\n", text);
 	}
 
 	if (node->type != GUMBO_NODE_ELEMENT || 
@@ -63,6 +64,7 @@ void extract_text(GumboNode* node) {
 	{
 		return;
 	}
+ 
 	
 	GumboVector* children = &node->v.element.children;
 	for (unsigned int i = 0; i < children->length; ++i) {
@@ -116,7 +118,7 @@ int main(int argc, char** argv) {
 	
 	CURL *curl_handle = curl_easy_init();
 
-	const char* starting_url = "https://en.wikipedia.org/wiki/Main_Page";
+	const char* starting_url = "https://en.wikipedia.org/";
 	const char* user_agent = "cdub is just programming";
 	const char* db_name = "index.db";
 
@@ -127,6 +129,7 @@ int main(int argc, char** argv) {
 		curl_easy_setopt(curl_handle, CURLOPT_URL, starting_url);
 		curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, write_data);
 		curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, user_agent);
+		curl_easy_setopt(curl_handle, CURLOPT_FOLLOWLOCATION, 1L);
 
 		Chunk chunk = {0};
 		curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, &chunk);
@@ -142,8 +145,10 @@ int main(int argc, char** argv) {
 			insert_document(db_handle, starting_url, (unsigned int)chunk.size);
 
 			extract_text(output->root);
-			search_for_links(output->root, links, &number_of_links);	
+			//search_for_links(output->root, links, &number_of_links);	
 			gumbo_destroy_output(&kGumboDefaultOptions, output);
+
+			/*
 
 			for (int i = 0; i < BUFFER_MAX_AMOUNT_OF_LINKS; ++i) {
 				if (links[i] == NULL) {
@@ -170,6 +175,8 @@ int main(int argc, char** argv) {
 			}
 
 			free(chunk.response);
+
+			*/
 		} else {
 			printf("Request Failed!\n");
 		}
