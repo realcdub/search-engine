@@ -53,25 +53,6 @@ void search_for_links(GumboNode* node, char** links, size_t *number_of_links) {
 	}
 }
 
-void extract_text(GumboNode* node) {
-	if (node->type == GUMBO_NODE_TEXT) {
-		const char* text = node->v.text.text;
-	}
-
-	if (node->type != GUMBO_NODE_ELEMENT || 
-			node->type == GUMBO_TAG_SCRIPT || 
-			node->type == GUMBO_TAG_STYLE) 
-	{
-		return;
-	}
- 
-	
-	GumboVector* children = &node->v.element.children;
-	for (unsigned int i = 0; i < children->length; ++i) {
-		extract_text((GumboNode*)(children->data[i]));
-	}
-}
-
 void normalize_text(char* buffer) {
 	size_t buffer_length = strlen(buffer);
 
@@ -80,13 +61,10 @@ void normalize_text(char* buffer) {
 	}
 }
 
-void tokenize_text() {
-}
-
 void handle_query(sqlite3 *db_handle, int return_code, char* query, char* error_message) {
 	sqlite3_free(query);
 
-	if (return_code == SQLITE_ABORT) {
+	if (return_code != SQLITE_OK) {
 		if (error_message != NULL) {
 			printf("%s\n", error_message);
 			sqlite3_free(error_message);
@@ -96,30 +74,91 @@ void handle_query(sqlite3 *db_handle, int return_code, char* query, char* error_
 	}
 }
 
-void insert_document(sqlite3 *db_handle, const char* url, unsigned int document_length) {
-	// Be careful here (%Q, %d), possible switch to prepare statements if SQL injections is an issue
-	char* query = sqlite3_mprintf("INSERT INTO Documents (url, length) VALUES (%Q, %d);", url, document_length);
-	char *error_message;
-	int return_code = sqlite3_exec(db_handle, query, nullptr, nullptr, &error_message);	
+int insert_document(sqlite3 *db_handle, const char* url, unsigned int document_length) {
+	char* query = "INSERT INTO Documents (url, length) VALUES (?, ?) ON CONFLICT(url) DO UPDATE SET url=url RETURNING doc_id;";
+	int document_id = -1;
 
-	handle_query(db_handle, return_code, query, error_message);
+	sqlite3_stmt *stmt;
+	if (sqlite3_prepare_v2(db_handle, query, -1, &stmt, NULL) != SQLITE_OK) {
+		const char* error_message = sqlite3_errmsg(db_handle);
+		printf("DOCUMENT INSERT ERROR: %s\n", error_message);
+	}
+
+	sqlite3_bind_text(stmt, 1, url, -1, SQLITE_STATIC);
+	sqlite3_bind_int(stmt, 2, document_length);
+	if (sqlite3_step(stmt) == SQLITE_ROW) {
+		//if (sqlite3_column_type() == SQLITE_INTEGER) {
+		document_id = sqlite3_column_int(stmt, 0);
+		//}
+	}
+
+	sqlite3_finalize(stmt);
+
+	return document_id;
 };
 
-void insert_term(sqlite3 *db_handle, const char* term) {
-	char* query = sqlite3_mprintf("INSERT INTO Terms (term) VALUES (%Q);", term);
+int insert_term(sqlite3 *db_handle, const char* term) {
+	char* query = sqlite3_mprintf("INSERT INTO Terms (term) VALUES (?) ON CONFLICT(term) DO UPDATE SET term=term RETURNING term_id;", term);
+
+	int term_id = -1;
+
+	sqlite3_stmt *stmt;
+	if (sqlite3_prepare_v2(db_handle, query, -1, &stmt, NULL) == SQLITE_OK) {
+		sqlite3_bind_text(stmt, 1, term, -1, SQLITE_STATIC);
+		if (sqlite3_step(stmt) == SQLITE_ROW) {
+			//if (sqlite3_column_type() == SQLITE_INTEGER) {
+			term_id = sqlite3_column_int(stmt, 0);
+			//}
+		}
+	}
+
+	sqlite3_finalize(stmt);
+
+	return term_id;
+};
+
+void insert_posting(sqlite3 *db_handle, unsigned int term_id, unsigned int document_id) {
+	// UPSERT (Update or Insert)
+	char* query = sqlite3_mprintf("INSERT INTO Postings (term_id, doc_id, frequency) VALUES (%d, %d, 1) ON CONFLICT (term_id, doc_id) DO UPDATE SET frequency = frequency + 1;", term_id, document_id);
 	char *error_message;
 	int return_code = sqlite3_exec(db_handle, query, nullptr, nullptr, &error_message);
 
 	handle_query(db_handle, return_code, query, error_message);
 };
 
-void insert_posting(sqlite3 *db_handle, unsigned int term_id, unsigned int document_id, unsigned int frequency) {
-	char* query = sqlite3_mprintf("INSERT INTO Postings (term_id, doc_id, frequency) VALUES (%d, %d, %d);", term_id, document_id, frequency);
-	char *error_message;
-	int return_code = sqlite3_exec(db_handle, query, nullptr, nullptr, &error_message);
+void process_text(sqlite3* db_handle, GumboNode* node, unsigned int document_id) {
+	const char* delimeter = " \t\n\r.,!?;:()[]{}'\"-";
 
-	handle_query(db_handle, return_code, query, error_message);
-};
+	if (node->type == GUMBO_NODE_TEXT) {
+		const char* extracted_text = node->v.text.text;
+		char* normalized_text = strdup(extracted_text);
+		normalize_text(normalized_text);
+
+		char* token = strtok(normalized_text, delimeter);
+		while (token != nullptr) {
+			printf("Processing token: %s\n", token);
+			int term_id = insert_term(db_handle, token);
+			insert_posting(db_handle, term_id, document_id);
+
+			token = strtok(nullptr, delimeter);
+		}
+
+		free(normalized_text);
+	}
+
+	if (node->type != GUMBO_NODE_ELEMENT || 
+			node->v.element.tag == GUMBO_TAG_SCRIPT || 
+			node->v.element.tag == GUMBO_TAG_STYLE) 
+	{
+		return;
+	}
+ 
+	
+	GumboVector* children = &node->v.element.children;
+	for (unsigned int i = 0; i < children->length; ++i) {
+		process_text(db_handle, (GumboNode*)(children->data[i]), document_id);
+	}
+}
 
 int main(int argc, char** argv) {
 	curl_global_init(CURL_GLOBAL_ALL);
@@ -153,13 +192,11 @@ int main(int argc, char** argv) {
 			char *links[BUFFER_MAX_AMOUNT_OF_LINKS] = {NULL};
 			size_t number_of_links = 0;
 
-			insert_document(db_handle, starting_url, (unsigned int)chunk.size);
+			int document_id = insert_document(db_handle, starting_url, (unsigned int)chunk.size);
+			process_text(db_handle, output->root, document_id);
 
-			extract_text(output->root);
-			//search_for_links(output->root, links, &number_of_links);	
+			search_for_links(output->root, links, &number_of_links);	
 			gumbo_destroy_output(&kGumboDefaultOptions, output);
-
-			/*
 
 			for (int i = 0; i < BUFFER_MAX_AMOUNT_OF_LINKS; ++i) {
 				if (links[i] == NULL) {
@@ -174,9 +211,11 @@ int main(int argc, char** argv) {
 				success = curl_easy_perform(curl_handle);
 
 				if (success == CURLE_OK) {
-					//printf("%s   %zu\n", link, chunk.size);
-					insert_document(db_handle, link, (unsigned int)chunk.size);
 					output = gumbo_parse(chunk.response);
+
+					int document_id = insert_document(db_handle, link, (unsigned int)chunk.size);
+					process_text(db_handle, output->root, document_id);
+
 					gumbo_destroy_output(&kGumboDefaultOptions, output);
 				} else {
 					printf("%s: Request Failed!\n", link);
@@ -186,8 +225,6 @@ int main(int argc, char** argv) {
 			}
 
 			free(chunk.response);
-
-			*/
 		} else {
 			printf("Request Failed!\n");
 		}
