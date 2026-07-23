@@ -1,4 +1,4 @@
-# C Web Crawler & Search Engine
+# C Search Engine
 
 A search engine written entirely in C. This project demonstrates systems-level programming, manual memory management, and information retrieval concepts by fetching live web pages, parsing HTML DOM structures, and ranking search results using the BM25 mathematical algorithm.
 
