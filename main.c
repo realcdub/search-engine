@@ -6,7 +6,7 @@
 #include <sqlite3.h>
 #include <ctype.h>
 
-#define BUFFER_MAX_AMOUNT_OF_LINKS 50
+#define BUFFER_MAX_AMOUNT_OF_LINKS 10000
 
 typedef struct {
 	char* response;
