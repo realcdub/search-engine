@@ -21,7 +21,8 @@ A search engine written entirely in C. This project demonstrates systems-level p
 The project is split into two distinct, decoupled executables:
 
 1.  **The Crawler (`crawler.c`):** Initializes a connection starting from a seed URL (Wikipedia). It fetches the HTML, parses the DOM for new links, tokenizes all valid text strings, and performs SQL operations to store URLs that were found along with information such as document length.
-2.  **The Search Engine (`search.c`):** A command-line tool that accepts user query terms. It queries the `index.db` database using SQL operations to find matching documents, calculates the BM25 score for each document-term pair, and sorts the top 10 results using an in-place array shifting algorithm.
+
+2.  **Serving The Results (`search.c`):** A command-line tool that accepts user query terms. It queries the `index.db` database using SQL operations to find matching documents, calculates the BM25 score for each document-term pair, and sorts the top 10 results using an in-place array shifting algorithm.
 
 ## Installation & Setup
 
