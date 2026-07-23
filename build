@@ -1,4 +1,4 @@
 #!/bin/bash
 
-gcc -std=c2x -o main main.c gumbo-parser/* -I includes/gumbo-headers -lcurl -lsqlite3
+gcc -std=c2x -o crawler crawler.c gumbo-parser/* -I includes/gumbo-headers -lcurl -lsqlite3
 gcc -std=c2x -o search search.c -lsqlite3 -lm
